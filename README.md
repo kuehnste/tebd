@@ -1,20 +1,20 @@
 # tebd
 
-Simple time evolution block decimation (TEBD) code for MPS with open boundary conditions using the [Julia Programming Language](https://julialang.org/) Language.
+Simple time evolution code for Matrix Product States (MPS) with open boundary conditions written in the [Julia Programming Language](https://julialang.org/).
 
 ## Overview
 
-This project accompanies the hands-on tutorials for the lectures on Tensor Networks at the [CERN-MPQ-UIBK School on Quantum Simulation of Fundamental Physics](https://indico.cern.ch/event/1623729/). It contains a simple sample implementaion for the time evolution block decimation procedure for Matrix Product States with open boundary conditions.
+This repository accompanies the hands-on tutorials for the lectures on Tensor Networks at the [CERN-MPQ-UIBK School on Quantum Simulation of Fundamental Physics](https://indico.cern.ch/event/1623729/). 
+
+The project provides a simple, pedagogical implementation of an algorithm for simulating the time evolution of one-dimensional quantum many-body systems MPS. The implementation is intended primarily for educational purposes and follows the exercises from the accompanying tutorial. It includes functionality for both real-time and imaginary-time evolution and assumes open boundary conditions.
 
 ## Repository Structure
 
 ```
 project/
 │
-├── docs/           Documentation or notes
 ├── src/            Source code
 ├── examples/       Example programs
-├── figures/        Figures used in notes
 ├── tests/          Unit tests
 ├── LICENSE
 └── README.md
@@ -24,7 +24,10 @@ The folder `src` contains the codes and different functions that are created by 
 
 ## Installation
 
-To run the code, you need to install Julia, which is available [here](https://julialang.org/downloads/). Instructions on how te get started can be obtained following this [link](https://docs.julialang.org/en/v1/manual/getting-started/).
+To run the code, you will need to have Julia installed. Julia can be downloaded from the [official website](https://julialang.org/downloads/). 
+
+For instructions on getting started, see the [Julia documentation](https://docs.julialang.org/en/v1/manual/getting-started/).
+
 
 ## Contributing
 
