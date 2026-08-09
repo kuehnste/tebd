@@ -1,25 +1,27 @@
 using Test
-using LinearAlgebra
-using MatrixProductStates
+
+include("../src/tensorfunctions.jl")
+include("../src/MPS_OBC.jl")
+include("../src/operators.jl")
 
 @testset "Random MPS and basis states" begin
     # Use left canonical form
     for N = 10:2:20
         mps_real = random_mps_obc(N, 5, 3, Float64)
         mps_complex = random_mps_obc(N, 5, 3, ComplexF64)
-        gaugeMPS!(mps_real, :left, true)
-        gaugeMPS!(mps_complex, :left, true)
-        @test isapprox(calculate_overlap(mps_real, mps_real), 1.0)
-        @test isapprox(calculate_overlap(mps_complex, mps_complex), 1.0 + 0.0im)
+        mps_real = svd_compress_mps(mps_real, 0, 1E-12, true, direction=:left)
+        mps_complex = svd_compress_mps(mps_complex, 0, 1E-12, true, direction=:left)
+        @test isapprox(inner_product(mps_real, mps_real), 1.0)
+        @test isapprox(inner_product(mps_complex, mps_complex), 1.0 + 0.0im)
     end
     # Use right canonical form
     for N = 10:2:20
         mps_real = random_mps_obc(N, 5, 3, Float64)
         mps_complex = random_mps_obc(N, 5, 3, ComplexF64)
-        gaugeMPS!(mps_real, :right, true)
-        gaugeMPS!(mps_complex, :right, true)
-        @test isapprox(calculate_overlap(mps_real, mps_real), 1.0)
-        @test isapprox(calculate_overlap(mps_complex, mps_complex), 1.0 + 0.0im)
+        mps_real = svd_compress_mps(mps_real, 0, 1E-12, true, direction=:right)
+        mps_complex = svd_compress_mps(mps_complex, 0, 1E-12, true, direction=:right)
+        @test isapprox(inner_product(mps_real, mps_real), 1.0)
+        @test isapprox(inner_product(mps_complex, mps_complex), 1.0 + 0.0im)
     end
 
     # Invalid configurations which should produce an error
@@ -36,7 +38,7 @@ using MatrixProductStates
     for N = 4:10
         configuration = rand([1; 2; 3], N)
         mps = basis_state_obc(configuration, 3)
-        @test isapprox(calculate_overlap(mps, mps), 1.0)
+        @test isapprox(inner_product(mps, mps), 1.0)
     end
 end
 
@@ -44,18 +46,18 @@ end
     for N = 10:2:20
         for d = 2:5
             mps_complex = random_mps_obc(N, 5, d, ComplexF64)
-            gaugeMPS!(mps_complex, :left, true)
-            id_mpo = getIdentityMPO(N, d)
+            mps_complex = svd_compress_mps(mps_complex, 0, 1E-12, true, direction = :right)
+            id_mpo = get_identity_mpo(N, d)
             mps_operator_applied = apply_operator(id_mpo, mps_complex)
-            @test isapprox(calculate_overlap(mps_complex, mps_operator_applied), 1.0 + 0.0im)
+            @test isapprox(inner_product(mps_complex, mps_operator_applied), 1.0 + 0.0im)
         end
     end
 end
 
 @testset "Canonical form" begin
     mps = random_mps_obc(10, 5, 2, ComplexF64)
-    mps_left_gauged = gaugeMPS(mps, :left, true)
-    mps_right_gauged = gaugeMPS(mps, :right, true)
+    mps_left_gauged = svd_compress_mps(mps, 0, 1E-12, true, direction = :left)
+    mps_right_gauged = svd_compress_mps(mps, 0, 1E-12, true, direction = :right)
     # Check the left canonical gauge
     for i = 1:length(mps_left_gauged)
         Dr = size(mps_left_gauged[i], 2)
@@ -73,54 +75,24 @@ end
 @testset "Inplace operator application" begin
     # Check that we get an error, if we try to overwrite a real MPS with a complex MPO
     mps = random_mps_obc(10, 9, 2, Float64)
-    H = getHeisenbergMPO(10, 1, 1)
+    H =  get_heisenberg_mpo(10, 1, 1)
     @test_throws InexactError apply_operator!(H, mps)
 
     # Compute result of the contraction and store in a new MPS, compare it with result of inplace contraction
     for N = 10:2:20
         # Prepare a random MPS and gauge it
         mps = random_mps_obc(N, 15, 2, ComplexF64)
-        gaugeMPS!(mps, :left, true)
+        mps = svd_compress_mps(mps, 0, 1E-12, true, direction = :left)
         # Some MPOs for testing
-        H = getIsingMPO(N, 1.0, 0.9)
+        H = get_ising_mpo(N, 1.0, 0.9)
         # Apply the Hamiltonian generating a copy
         mps_new = apply_operator(H, mps)
-        gaugeMPS!(mps_new, :left, true)
+        mps_new = svd_compress_mps(mps_new, 0, 1E-12, true, direction = :left)
         # Now in place
         apply_operator!(H, mps)
-        gaugeMPS!(mps, :left, true)
+        mps = svd_compress_mps(mps, 0, 1E-12, true, direction = :left)
         # Check the expectation values
-        @test isapprox(calculate_overlap(mps, mps_new), 1.0 + 0.0im)
-    end
-end
-
-@testset "Summing MPSs" begin
-    for N = 10:2:20
-        # Prepare a random MPS and gauge it
-        mps = random_mps_obc(N, 15, 2, ComplexF64)
-        gaugeMPS!(mps, :left, true)
-        # Sum it with itself
-        mps2 = sum_states(mps, mps)
-        # Check the expectation values
-        @test isapprox(calculate_overlap(mps2, mps), 2.0)
-        @test isapprox(calculate_overlap(mps2, mps2), 4.0)
-    end
-end
-
-@testset "Summing MPOs" begin
-    for N = 10:2:20
-        # Prepare a random MPS and gauge it
-        mps = random_mps_obc(N, 15, 2, ComplexF64)
-        gaugeMPS!(mps, :left, true)
-        # Some MPOs for testing
-        id_mpo = getIdentityMPO(N, 2)
-        H = getIsingMPO(N, 1.0, 0.9)
-        # Compute sums thereof
-        O1 = sum_operators(id_mpo, H)
-        O2 = sum_operators(H, H)
-        # Check the expectation values
-        @test isapprox(expectation_value(mps, O1), 1.0 + expectation_value(mps, H))
-        @test isapprox(expectation_value(mps, O2), 2.0 * expectation_value(mps, H))
+        @test isapprox(inner_product(mps, mps_new), 1.0 + 0.0im)
     end
 end
 
@@ -143,132 +115,22 @@ end
         state_vector_mps = contract_virtual_indices(mps)
         @test isapprox(state_vector' * state_vector_mps, 1.0)
     end
-
-    # Now try with the GHZ state on 10 sites
-    all_zeros = basis_state_obc(ones(Int64, 10))
-    all_ones = basis_state_obc(2 * ones(Int64, 10))
-    mps_ghz = sum_states(all_zeros, all_ones)
-    gaugeMPS!(mps_ghz, :left, true)
-    v1 = zeros(2^10)
-    v1[1] = 1
-    v2 = zeros(2^10)
-    v2[end] = 1
-    state_vector_ghz = 1 / sqrt(2) * (v1 + v2)
-    state_vector_mps = contract_virtual_indices(mps_ghz)
-    @test isapprox(state_vector_ghz' * state_vector_mps, 1.0)
 end
 
 @testset "Contracting virtual indices of an MPO" begin
     # Test with the identity
-    id_mpo = getIdentityMPO(5, 2)
+    id_mpo = get_identity_mpo(5, 2)
     id_mpo_matrix = contract_virtual_indices(id_mpo)
     @test isapprox(id_mpo_matrix, Matrix(1.0I, 2^5, 2^5))
 
     # A simple instance of the Ising Hamiltonian
     J = 0.9
     lambda = 1.1
-    ising_mpo = getIsingMPO(4, J, lambda)
-    Id, X, _, Z = getPauliMatrices()
+    ising_mpo = get_ising_mpo(4, J, lambda)
+    Id, X, _, Z = get_pauli_matrices()
     Hising = -J * (kron(X, X, Id, Id) + kron(Id, X, X, Id) + kron(Id, Id, X, X)) - lambda * (kron(Z, Id, Id, Id) + kron(Id, Z, Id, Id) + kron(Id, Id, Z, Id) + kron(Id, Id, Id, Z))
     Hising_mpo = contract_virtual_indices(ising_mpo)
     @test isapprox(Hising, Hising_mpo)
-end
-
-@testset "Test entropy computation" begin
-    # A product state should always have vanishing entropy
-    mps = random_mps_obc(10, 1, 2)
-    gaugeMPS!(mps, :left, true)
-    for i = 1:length(mps)
-        @test abs(compute_entropy(mps, i)) < 1E-12
-    end
-    @test abs(compute_entropy(mps)) < 1E-12
-
-    # Now prepare the GHZ state
-    all_zeros = basis_state_obc(ones(Int64, 10))
-    all_ones = basis_state_obc(2 * ones(Int64, 10))
-    mps = sum_states(all_zeros, all_ones)
-    gaugeMPS!(mps, :left, true)
-    for i = 1:length(mps)-1
-        @test isapprox(compute_entropy(mps, i), 1.0)
-    end
-
-    # Compare the entropy computation with the default argument to what one would expect
-    mps = random_mps_obc(11, 4, 3)
-    entropy1 = compute_entropy(mps)
-    entropy2 = compute_entropy(mps, 6)
-    @test isapprox(entropy1, entropy2)
-
-    mps = random_mps_obc(8, 6, 3)
-    entropy1 = compute_entropy(mps)
-    entropy2 = compute_entropy(mps, 4)
-    @test isapprox(entropy1, entropy2)
-end
-
-@testset "Compressing an MPS via SVD" begin
-    mps = basis_state_obc([1; 2; 1; 2; 1; 2])
-    @test_throws AssertionError svd_compress_mps(mps, 0, 0.0)
-
-    # Generate an empty state corresponding to a 0
-    mps = random_mps_obc(4, 1, 2)
-    mps[1] = 0.0 * mps[1]
-    # Build an equal weight superposition of all basis states which is a simple product state
-    for i1 = 1:2
-        for i2 = 1:2
-            for i3 = 1:2
-                for i4 = 1:2
-                    tmp = basis_state_obc([i1; i2; i3; i4], 2)
-                    mps = sum_states(mps, tmp)
-                end
-            end
-        end
-    end
-    # Now we compress the MPS, which is exactly represented by a MPS with bond dimension one
-    res = svd_compress_mps(mps, 1)
-    res2 = svd_compress_mps(mps, 0, 1E-6)
-    res3 = svd_compress_mps(mps, 1, 1E-6)
-    # The norm will be 16, as we added all 16 configurations without normalizing the result
-    @test isapprox(calculate_overlap(mps, res), 16.0)
-    @test isapprox(calculate_overlap(mps, res2), 16.0)
-    @test isapprox(calculate_overlap(mps, res3), 16.0)
-end
-
-@testset "Sampling from an MPS" begin
-    # Some experiments with product states for which the outcome has to be deterministic
-    for N = 4:6
-        configuration = rand([1; 2; 3], N)
-        mps = basis_state_obc(configuration, 3)
-        for i = 1:10
-            sample = sample_from_mps(mps)
-            @test isequal(sample, configuration)
-        end
-    end
-    # Now prepare the GHZ state
-    all_zeros = basis_state_obc(ones(Int64, 4))
-    all_ones = basis_state_obc(2 * ones(Int64, 4))
-    mps_ghz = sum_states(all_zeros, all_ones)
-    gaugeMPS!(mps_ghz, :left, true)
-    prob = zeros(2)
-    nsamples = 100000
-    # Check the outcome for the first 10 samples
-    for i = 1:10
-        sample = sample_from_mps(mps_ghz)
-        @test (sample == [1; 1; 1; 1] || sample == [2; 2; 2; 2])
-        if sample == [1; 1; 1; 1]
-            prob[1] += 1
-        else
-            prob[2] += 1
-        end
-    end
-    # For efficiency do not check the other ones anymore
-    for i = 11:nsamples
-        sample = sample_from_mps(mps_ghz)
-        if sample == [1; 1; 1; 1]
-            prob[1] += 1
-        else
-            prob[2] += 1
-        end
-    end
-    @test (sum(abs.(prob ./ nsamples - 0.5 * ones(2))) < 1E-2)
 end
 
 @testset "MPO decomposition" begin

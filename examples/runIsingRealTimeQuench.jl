@@ -6,6 +6,22 @@ include("../src/MPS_OBC.jl")
 include("../src/observables_and_evolution.jl")
 include("../src/operators.jl")
 
+"""
+    get_maximum_bond_dimension(mps::MPS)
+
+Get the maximum bond dimension of an MPS, i.e. maximum virtual dimension of the MPS tensors
+"""
+function maximum_bond_dimension(mps::MPS)
+    Dmax = 0
+    for i=1:length(mps)
+        Dloc = max(size(mps[i], 1), size(mps[i], 2))
+        if Dloc > Dmax
+            Dmax = Dloc
+        end
+    end
+    return Dmax
+end
+
 let
 
     ##################################################################
@@ -19,9 +35,9 @@ let
     # Physical dimension
     d = 2
     # Desired accuracy in the SVD compression
-    acc = 1E-10
+    acc = 1E-8
     # The number of time steps we take
-    nsteps = 200
+    nsteps = 25
     # The size of each time step
     dt = 5E-2
 
@@ -38,9 +54,9 @@ let
     Id, X, _, Z = get_pauli_matrices()
 
     # Prepare the matrix representation for the different exponentials appearing in the odd-even decomposition in imaginary time
-    Uloc_left_boundary = exp(-dt * (-J * kron(X, X) - lambda * kron(Z, Id) - 0.5 * lambda * kron(Id, Z)))
-    Uloc_bulk = exp(-dt * (-J * kron(X, X) - 0.5 * lambda * (kron(Z, Id) + kron(Id, Z))))
-    Uloc_right_boundary = exp(-dt * (-J * kron(X, X) - 0.5 * lambda * kron(Z, Id) - lambda * kron(Id, Z)))
+    Uloc_left_boundary = exp(-1.0im * dt * (-J * kron(X, X) - lambda * kron(Z, Id) - 0.5 * lambda * kron(Id, Z)))
+    Uloc_bulk = exp(-1.0im * dt * (-J * kron(X, X) - 0.5 * lambda * (kron(Z, Id) + kron(Id, Z))))
+    Uloc_right_boundary = exp(-1.0im * dt * (-J * kron(X, X) - 0.5 * lambda * kron(Z, Id) - lambda * kron(Id, Z)))
 
     # Find the mpo representation for the local terms
     mpo_Uloc_left_boundary = decompose_into_mpo(Uloc_left_boundary, d)
@@ -63,9 +79,12 @@ let
     ##################################################################
     # Running the actual evolution
     ##################################################################
+    # Energy and total Pauli-Z as MPO
+    Hmpo = get_ising_mpo(N, J, lambda)
+    tot_z_mpo = get_total_pauli_z_mpo(N)
 
-    # Evolve in imaginary time starting from a random state
-    psi = random_mps_obc(N, D, d, Float64)
+    # Evolve in real starting from a random product state
+    psi = random_mps_obc(N, 1, d, Float64)
     # To normalize and remove unnecessary parameters, we put the MPS in left and right canonical form
     psi = svd_compress_mps(psi, 0, 1E-15, true, direction=:left)
     psi = svd_compress_mps(psi, 0, 1E-15, direction=:right)
@@ -73,27 +92,10 @@ let
         # Apply the evolution operator using a first-order Suzuki Trotter approximation
         psi = apply_operator(Uodd, psi)
         psi = apply_operator(Ueven, psi)
-        # Compress and renormalize
-        psi = svd_compress_mps(psi, D, acc, true, direction=:left)
-        println("Step: ", i, ":  E = ", real(expectation_energy(psi, mpo_Hloc_left_boundary, mpo_Hloc_right_boundary, mpo_Hloc_bulk)))
+        # Compress
+        psi = svd_compress_mps(psi, 0, acc, direction=:left)
+        println("Step: ", i, ": Dmax = ", maximum_bond_dimension(psi), ", E = ", real(expectation_value(psi, Hmpo)), ", Sz = ", real(expectation_value(psi, tot_z_mpo)))
     end
-    # Compute the observables at the end
-    E0 = expectation_energy(psi, mpo_Hloc_left_boundary, mpo_Hloc_right_boundary, mpo_Hloc_bulk)
-    Sz = expectation_single_body_operator(psi, Z)
-
-    # Print the results
-    println(" ")
-    println("Groundstate energy:            ", E0)
-    println("Groundstate energy density:    ", E0 / N)
-    println("Total spin:                    ", Sz)
-    println(" ")
-
-    # For comparison, we try with the MPO version
-    Hmpo = get_ising_mpo(N, J, lambda)
-    # Get the MPO for the total spin
-    tot_z_mpo = get_total_pauli_z_mpo(N)
-    println("Groundstate energy with MPO:   ", expectation_value(psi, Hmpo))
-    println("Total spin with MPO:           ", expectation_value(psi, tot_z_mpo))
 
     nothing
 end

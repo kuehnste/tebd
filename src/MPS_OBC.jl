@@ -256,7 +256,6 @@ function svd_sweep_right(mps::MPS, Dmax::Int, tol::Real=0.0, unit_normalize::Boo
         Dl1, Dr1, d1 = size(res[1])
         tmp = reshape(res[1], (Dl1, Dr1 * d1))
         U, S, V = svd!(tmp)
-        println("Norm factor: ", S)
         res[1] = reshape(V', (Dl1, Dr1, d1))
     end
     return res
@@ -347,10 +346,6 @@ function apply_operator(operator::MPO{T1}, mps::MPS{T2})::MPS where {T1,T2}
 
     # Apply the MPO to the MPS and generate new MPS
     for i = 1:N1
-        # temp = contract_tensors(operator[i], [4], mps[i], [3])
-        # temp = permutedims(temp, (1, 4, 2, 5, 3))
-        # dim1, dim2, dim3, dim4, dim5 = size(temp)
-        # res[i] = reshape(temp, (dim1 * dim2, dim3 * dim4, dim5))
         res[i] = contract_local_tensor(operator[i], mps[i])
     end
     return res
@@ -360,7 +355,7 @@ end
 """
     apply_operator!(operator::MPO, mps::MPS)
     
-Apply an operator given as MPO to an MPS. The resulting MPS will have a bond dimension that is the product of the bond dimensions of the MPS and the MPO. The input will be overwritten by the result. This requires that the type of the elements of the input MPS is able to accommodate the result of multiplying the MPO tensors into the MPS tensors (e.g. applying a complex MPO to a real MPS cannot be done in palce as the result will be complex)
+Apply an operator given as MPO to an MPS. The resulting MPS will have a bond dimension that is the product of the bond dimensions of the MPS and the MPO. The input will be overwritten by the result. This requires that the type of the elements of the input MPS is able to accommodate the result of multiplying the MPO tensors into the MPS tensors (e.g. applying a complex MPO to a real MPS cannot be done in place as the result will be complex)
 """
 function apply_operator!(operator::MPO, mps::MPS)
     N1 = length(mps)
@@ -369,10 +364,7 @@ function apply_operator!(operator::MPO, mps::MPS)
 
     # Contract the tensors for each site
     for i = 1:N1
-        temp = contract_tensors(operator[i], [4], mps[i], [3])
-        temp = permutedims(temp, (1, 4, 2, 5, 3))
-        dim1, dim2, dim3, dim4, dim5 = size(temp)
-        mps[i] = reshape(temp, (dim1 * dim2, dim3 * dim4, dim5))
+        mps[i] = contract_local_tensor(operator[i], mps[i])
     end
 end
 
