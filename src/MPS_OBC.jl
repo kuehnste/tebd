@@ -17,17 +17,14 @@ MPO{T} = Vector{Operator{T}}
 
 Display a human-readable summary of a Matrix Product State
 
-The printed representation provides a compact overview of the
-matrix product state, including relevant structural information
-such as the number of sites and bond dimensions.
+The printed representation provides a compact overview of the Matrix Product State, including relevant structural information such as the number of sites, physical dimensions and bond dimensions.
 """
 function Base.show(io::IO, mps::MPS)
     N = length(mps)
-    bond_dims = zeros(Int64, N-1)
-    for i=1:(N-1)
-        bond_dims[i] = size(mps[i], 2)
+    println(io, "MPS with $N sites and tensors")
+    for i=1:N
+        println(" - Site [$i]: (D_l, D_r, d) = (", size(mps[i], 1), ", ", size(mps[i], 2), ", ", size(mps[i], 3), ")")
     end
-    print(io, "MPS with $N sites and bond dimensions $bond_dims")
 end
 
 
@@ -36,17 +33,14 @@ end
 
 Display a human-readable summary of a Matrix Product Operator
 
-The printed representation provides a compact overview of the
-matrix product state, including relevant structural information
-such as the number of sites and bond dimensions.
+The printed representation provides a compact overview of the Matrix Product operators, including relevant structural information such as the number of sites, physical dimensions and bond dimensions.
 """
 function Base.show(io::IO, mpo::MPO)
     N = length(mpo)
-    bond_dims = zeros(Int64, N-1)
-    for i=1:(N-1)
-        bond_dims[i] = size(mpo[i], 2)
+    print(io, "MPO with $N sites and tensors")
+    for i=1:N
+        println(" - Site [$i]: (D_l, D_r, d_o, d_i) = (", size(mpo[i], 1), ", ", size(mpo[i], 2), ", ", size(mpo[i], 3), ", ", size(mpo[i], 4), ")")
     end
-    print(io, "MPO with $N sites and bond dimensions $bond_dims")
 end
 
 
@@ -212,7 +206,6 @@ function svd_sweep_left(mps::MPS, Dmax::Int, tol::Real=0.0, unit_normalize::Bool
         tmp = permutedims(res[N], (1, 3, 2))
         tmp = reshape(tmp, (Dl1 * d1, Dr1))
         U, S, V = svd!(tmp)
-        println("Norm factor: ", S)
         res[N] = permutedims(reshape(U, (Dl1, d1, Dr1)), (1, 3, 2))
     end
     return res
@@ -323,6 +316,20 @@ function contract_virtual_indices(mpo::MPO)::Matrix{<:Number}
     return res
 end
 
+"""
+    contract_local_tensor(op::Operator, site::Site)
+
+Contract a local MPO tensor op with the corresponding MPS site tensor site.
+
+The contraction connects the fourth index of op with the third index of site, then permutes and reshapes the resulting tensor into a three-index tensor suitable for use as an MPS site.
+"""
+function contract_local_tensor(op::Operator, site::Site)
+    temp = contract_tensors(op, [4], site, [3])
+    temp = permutedims(temp, (1, 4, 2, 5, 3))
+    dim1, dim2, dim3, dim4, dim5 = size(temp)
+    return reshape(temp, (dim1 * dim2, dim3 * dim4, dim5))
+end
+
 
 """
     apply_operator(operator::MPO{T1}, mps::MPS{T2})::MPS where {T1,T2}
@@ -340,10 +347,11 @@ function apply_operator(operator::MPO{T1}, mps::MPS{T2})::MPS where {T1,T2}
 
     # Apply the MPO to the MPS and generate new MPS
     for i = 1:N1
-        temp = contract_tensors(operator[i], [4], mps[i], [3])
-        temp = permutedims(temp, (1, 4, 2, 5, 3))
-        dim1, dim2, dim3, dim4, dim5 = size(temp)
-        res[i] = reshape(temp, (dim1 * dim2, dim3 * dim4, dim5))
+        # temp = contract_tensors(operator[i], [4], mps[i], [3])
+        # temp = permutedims(temp, (1, 4, 2, 5, 3))
+        # dim1, dim2, dim3, dim4, dim5 = size(temp)
+        # res[i] = reshape(temp, (dim1 * dim2, dim3 * dim4, dim5))
+        res[i] = contract_local_tensor(operator[i], mps[i])
     end
     return res
 end

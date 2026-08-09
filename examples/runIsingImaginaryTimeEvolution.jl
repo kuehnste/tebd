@@ -5,6 +5,62 @@ include("../src/tensorfunctions.jl")
 include("../src/MPS_OBC.jl")
 include("../src/operators.jl")
 
+function get_energy(mps::MPS, H_tensors_left_boundary::Vector{<:AbstractArray{<:Number,4}}, H_tensors_right_boundary::Vector{<:AbstractArray{<:Number,4}}, H_tensors_bulk::Vector{<:AbstractArray{<:Number,4}})
+    # Initialize the energy
+    energy = 0
+    # Compute the energy by contracting the local two-body operators into the MPS and evaluating the inner product with the original MPS
+    N = length(mps)
+    for i=1:(N-1)
+        # Get a copy of the original MPS
+        mps_tmp = deepcopy(mps)
+        # Apply the local operator
+        if i==1
+            mps_tmp[i] = contract_local_tensor(H_tensors_left_boundary[1], mps_tmp[i])
+            mps_tmp[i+1] = contract_local_tensor(H_tensors_left_boundary[2], mps_tmp[i+1])
+        elseif i==(N-1)
+            mps_tmp[i] = contract_local_tensor(H_tensors_right_boundary[1], mps_tmp[i])
+            mps_tmp[i+1] = contract_local_tensor(H_tensors_right_boundary[2], mps_tmp[i+1])
+        else
+            mps_tmp[i] = contract_local_tensor(H_tensors_bulk[1], mps_tmp[i])
+            mps_tmp[i+1] = contract_local_tensor(H_tensors_bulk[2], mps_tmp[i+1])
+        end
+        # Get the inner product
+        energy += inner_product(mps, mps_tmp)
+    end
+    return energy
+end
+
+"""
+    get_expectation_single_body_operator(mps::MPS, op::Matrix{<:Number})
+
+Compute the expectation value of a single-body operator summed over the
+sites of an MPS.
+
+The operator op is applied independently to each site of mps, and the
+resulting overlaps with the original MPS are summed. Specifically, this
+computes
+    \\sum_i \\langle \\mathrm{MPS} | O_i | \\mathrm{MPS} \\rangle,
+where O_i denotes the operator op acting on site i.
+"""
+function get_expectation_single_body_operator(mps::MPS, op::Matrix{<:Number})
+    # Initialize the expectation value
+    expectation_value = 0
+    # Reshape the matrix into a MPO style tensor
+    d = size(op, 1)
+    op_local = reshape(op, (1, 1, d, d))
+    # Compute the expected value by contracting the local two-body operators into the MPS and evaluating the inner product with the original MPS
+    N = length(mps)
+    for i=1:N
+        # Get a copy of the original MPS
+        mps_tmp = deepcopy(mps)
+        # Apply the local operator
+        mps_tmp[i] = contract_local_tensor(op_local, mps_tmp[i])
+        # Get the inner product
+        expectation_value += inner_product(mps, mps_tmp)
+    end
+    return expectation_value
+end
+
 let
 
     ##################################################################
@@ -25,8 +81,8 @@ let
     dt = 5E-2
 
     # Coupling between nearest neighbors
-    #J = 1.0
-    J = 0.0
+    J = 1.0
+    #J = 0.0
     # Coupling to external field
     lambda = 1.0
     # Generate Ising Hamiltonian H = -J * sum_{i=1}^{N-1} X^i X^i+1 - lambda * sum_{i=1}^N Z^i.
@@ -162,45 +218,19 @@ let
 
     # Evolve in imaginary time starting from a random, normalized state
     psi = random_mps_obc(N, D, d, Float64)
-    # To normalize and remove unnecessary parameters, we put the MPS in left and right canoncial form
+    # To normalize and remove unnecessary parameters, we put the MPS in left and right canonical form
     psi = svd_compress_mps(psi, 0, 1E-15, true, direction=:left)
     psi = svd_compress_mps(psi, 0, 1E-15, direction=:right)
     for i = 1:nsteps
-        print("\rStep: ", i)
+        println("Step: ", i)
         # Apply the evolution operators
         psi = apply_operator(Uodd, psi)
         psi = apply_operator(Ueven, psi)
         # Compress and renormalize
         psi = svd_compress_mps(psi, D, acc, true, direction=:left)
     end
-    println("Norm psi = ", inner_product(psi, psi))
-    psipre = deepcopy(psi)
     E0 = expectation_value(psi, H)
-    E02 = inner_product(psi, apply_operator(Hodd, psi)) + inner_product(psi, apply_operator(Heven, psi))
-    println("Norm psi = ", inner_product(psi, psi))
-    println("Overlap psi = ", inner_product(psipre, psi))
-
-
-    psi1 = random_mps_obc(N, D, d, Float64)
-    psi1 = svd_compress_mps(psi1, 0, 1E-15, true, direction=:left)
-    psi1 = svd_compress_mps(psi1, 0, 1E-15, direction=:right)
-
-    Hpsi  = apply_operator(H, psi1)
-    println("Hpsi = ", inner_product(psi1,Hpsi))
-
-    Hopsy = apply_operator(Hodd, psi1)
-    println("Hpsi = ", inner_product(psi1,Hpsi))
-    println("Hopsy = ", inner_product(psi1,Hopsy))
-
-    Hepsy = apply_operator(Heven, psi1)
-    println("Hpsi = ", inner_product(psi1,Hpsi))
-    println("Hepsy = ", inner_product(psi1,Hepsy))
-
-
-    println("Hopsy + Hepsy = ", inner_product(psi1,Hopsy) + inner_product(psi1,Hepsy))
-
-    
-
+    E02 = get_energy(psi, mpo_Hloc_left_boundary, mpo_Hloc_right_boundary, mpo_Hloc_bulk)
 
 
     # Print the results
@@ -209,6 +239,7 @@ let
     println("Groundstate energy:            ", E02)
     println("Groundstate energy density:    ", E0 / N)
     println("Total spin:                    ", expectation_value(psi, Sz))
+    println("Total spin:                    ", get_expectation_single_body_operator(psi, Z))
 
     nothing
 end
