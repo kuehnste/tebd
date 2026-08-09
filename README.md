@@ -1,4 +1,4 @@
-# tebd
+# Time Evolution with Matrix Product States
 
 Simple time evolution code for Matrix Product States (MPS) with open boundary conditions written in the [Julia Programming Language](https://julialang.org/).
 
