@@ -175,39 +175,51 @@ function svd_sweep_left(mps::MPS, Dmax::Int, tol::Real=0.0, unit_normalize::Bool
     N = length(mps)
     res = deepcopy(mps)
     Dnew = 0
+    inds = Vector{Int64}(undef, 0)
     for i = 1:(N-1)
-        Dl1, _, d1 = size(res[i])
-        _, Dr2, d2 = size(res[i+1])
-        tmp = contract_tensors(res[i], [2], res[i+1], [1])
-        tmp = reshape(tmp, (Dl1 * d1, Dr2 * d2))
+        # Current tensor has shape (Dl, Dr, d)
+        Dl, Dr, d = size(res[i])
+        # Reshape the current tensor into a matrix
+        tmp = permutedims(res[i], (1, 3, 2))
+        tmp = reshape(tmp, (Dl * d, Dr))
+        # SVD of only the current tensor
         U, S, V = svd!(tmp)
-        M = Diagonal(S) * V'
-        # Now truncate if necessary
+        # Determine the retained bond dimension
+        inds
         if Dmax > 0 && !(tol > 0)
             Dnew = min(Dmax, length(S))
-            U = U[:, 1:Dnew]
-            M = M[1:Dnew, :]
+            inds = 1:Dnew
         else
-            ind = findall(x -> x > tol, S)
-            if Dmax > 0 && length(ind) > Dmax
-                ind = ind[1:Dmax]
+            inds = findall(x -> x > tol, S)
+
+            if Dmax > 0 && length(inds) > Dmax
+                inds = inds[1:Dmax]
             end
-            U = U[:, ind]
-            M = M[ind, :]
-            Dnew = length(ind)
+            # Make sure, we keep at least one singular value in case all are below threshold
+            if isempty(inds)
+                inds = [argmax(S)]
+            end
+            Dnew = length(inds)
         end
-        # Reshape and set new tensors
-        res[i] = permutedims(reshape(U, (Dl1, d1, Dnew)), (1, 3, 2))
-        res[i+1] = reshape(M, (Dnew, Dr2, d2))
+        # Truncate the SVD
+        U = U[:, inds]
+        S = S[inds]
+        V = V[:, inds]
+        # Left-canonical tensor
+        res[i] = permutedims(reshape(U, (Dl, d, Dnew)), (1, 3, 2))
+        # Absorb  S*V' in the next tensor
+        M = Diagonal(S) * V'
+        res[i+1] = contract_tensors(M, [2], res[i+1], [1])
     end
     # We apply an SVD to last site and drop the norm factor if we want to normalize
     if unit_normalize
-        Dl1, Dr1, d1 = size(res[N])
+        Dl, Dr, d = size(res[N])
         tmp = permutedims(res[N], (1, 3, 2))
-        tmp = reshape(tmp, (Dl1 * d1, Dr1))
+        tmp = reshape(tmp, (Dl * d, Dr))
         U, S, V = svd!(tmp)
-        res[N] = permutedims(reshape(U, (Dl1, d1, Dr1)), (1, 3, 2))
+        res[N] = permutedims(reshape(U, (Dl, d, Dr)), (1, 3, 2))
     end
+
     return res
 end
 
@@ -226,38 +238,49 @@ function svd_sweep_right(mps::MPS, Dmax::Int, tol::Real=0.0, unit_normalize::Boo
     N = length(mps)
     res = deepcopy(mps)
     Dnew = 0
+    inds = Vector{Int64}(undef, 0)
     for i = N:-1:2
-        Dl1, _, d1 = size(res[i-1])
-        _, Dr2, d2 = size(res[i])
-        tmp = contract_tensors(res[i-1], [2], res[i], [1])
-        tmp = reshape(tmp, (Dl1 * d1, Dr2 * d2))
+        # Current tensor has shape (Dl, Dr, d)
+        Dl, Dr, d = size(res[i])
+        # Reshape current tensor into a matrix
+        tmp = reshape(res[i], (Dl, Dr * d))
+        # SVD of only the current tensor
         U, S, V = svd!(tmp)
-        M = U * Diagonal(S)
-        # Now truncate if necessary
+        # Determine retained bond dimension
         if Dmax > 0 && !(tol > 0)
             Dnew = min(Dmax, length(S))
-            V = V[:, 1:Dnew]'
-            M = M[:, 1:Dnew]
+            inds = 1:Dnew
         else
-            ind = findall(x -> x > tol, S)
-            if Dmax > 0 && length(ind) > Dmax
-                ind = ind[1:Dmax]
+            inds = findall(x -> x > tol, S)
+            if Dmax > 0 && length(inds) > Dmax
+                inds = inds[1:Dmax]
             end
-            V = V[:, ind]'
-            M = M[:, ind]
-            Dnew = length(ind)
+            # Make sure, we keep at least one singular value in case all are below threshold
+            if isempty(inds)
+                inds = [argmax(S)]
+            end
+            Dnew = length(inds)
         end
-        # Reshape and set new tensors
-        res[i] = reshape(V, (Dnew, Dr2, d2))
-        res[i-1] = permutedims(reshape(M, (Dl1, d1, Dnew)), (1, 3, 2))
+        # Truncate the SVD
+        U = U[:, inds]
+        S = S[inds]
+        V = V[:, inds]
+        # Right-canonical tensor:
+        res[i] = reshape(V', (Dnew, Dr, d))
+        # Absorb U*S in the next tensor
+        M = U * Diagonal(S)
+        tmp = contract_tensors(res[i-1], [2], M, [1])
+        res[i-1] = permutedims(tmp, (1, 3, 2))
     end
-    # We apply an SVD to last site and drop the norm factor if we want to normalize
+
+    # Normalize the first tensor if requested
     if unit_normalize
-        Dl1, Dr1, d1 = size(res[1])
-        tmp = reshape(res[1], (Dl1, Dr1 * d1))
+        Dl, Dr, d = size(res[1])
+        tmp = reshape(res[1], (Dl, Dr * d))
         U, S, V = svd!(tmp)
-        res[1] = reshape(V', (Dl1, Dr1, d1))
+        res[1] = reshape(V', (Dl, Dr, d))
     end
+
     return res
 end
 

@@ -73,7 +73,9 @@ let
         # Apply the evolution operator using a first-order Suzuki Trotter approximation
         psi = apply_operator(Uodd, psi)
         psi = apply_operator(Ueven, psi)
-        # Compress and renormalize
+        # Put the MPS in right canonical gauge
+        psi = svd_compress_mps(psi, 0, 1E-15, direction=:right)
+        # SVD compress and renormalize
         psi = svd_compress_mps(psi, D, acc, true, direction=:left)
         println("Step: ", i, ":  E = ", real(expectation_energy(psi, mpo_Hloc_left_boundary, mpo_Hloc_right_boundary, mpo_Hloc_bulk)))
     end

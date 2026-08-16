@@ -30,14 +30,12 @@ let
 
     # Number of Spins
     N = 20
-    # Bond Dimension
-    D = 20
     # Physical dimension
     d = 2
     # Desired accuracy in the SVD compression
     acc = 1E-8
     # The number of time steps we take
-    nsteps = 25
+    nsteps = 100
     # The size of each time step
     dt = 5E-2
 
@@ -92,9 +90,11 @@ let
         # Apply the evolution operator using a first-order Suzuki Trotter approximation
         psi = apply_operator(Uodd, psi)
         psi = apply_operator(Ueven, psi)
+        # Put the MPS in right canonical gauge
+        psi = svd_compress_mps(psi, 0, 1E-15, direction=:right)
         # Compress
         psi = svd_compress_mps(psi, 0, acc, direction=:left)
-        println("Step: ", i, ": Dmax = ", maximum_bond_dimension(psi), ", E = ", real(expectation_value(psi, Hmpo)), ", Sz = ", real(expectation_value(psi, tot_z_mpo)))
+        println("Step: ", i, ": Dmax = ", maximum_bond_dimension(psi), ", E = ", real(expectation_value(psi, Hmpo)), ", Sz = ", real(expectation_value(psi, tot_z_mpo)), ", <psi|psi> = ", inner_product(psi, psi))
     end
 
     nothing
